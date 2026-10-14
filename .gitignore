@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# Third-party reference material (cloned reDM2 and reconstructed DM1 source): not ours to redistribute.
+research/
