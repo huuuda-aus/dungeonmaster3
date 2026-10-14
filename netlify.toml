@@ -1,0 +1,9 @@
+# Netlify build settings. The app lives in game/.
+[build]
+  base = "game"
+  command = "npm run build"
+  # Relative to the base directory, so this is game/dist.
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
