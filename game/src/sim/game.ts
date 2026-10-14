@@ -1,4 +1,4 @@
-import { Champion, CHAMPION_TEMPLATES, SKILL, SLOT, SLOT_COUNT, STAT, WEAR_OF_SLOT, type PartyShields } from './champion';
+import { Champion, CHAMPION_TEMPLATES, SKILL, SLOT, SLOT_COUNT, STAT, WEAR_OF_SLOT, WOUND_ALL, type AttackType, type PartyShields } from './champion';
 import {
   LIGHT_AMOUNT, PROJECTILE_COLOR, SPELL_COOLDOWNS, explosionDamage, findSpell, projectileRange, requiredLevel, runeCost,
   selfPower, spellEnergy, spellExperience, wisdomFailThreshold,
@@ -797,6 +797,43 @@ export class Game {
     p.eventId = this.timeline.add({ time: this.time + 2, priority: 2, kind: 'projectile', data: { uid: p.uid } });
   }
 
+  /**
+   * A projectile that stops against a wall or door explodes in its own square. If that
+   * is the party's square (the spell was cast facing a wall), the whole party is hurt.
+   */
+  private blastHere(p: Projectile): void {
+    if (p.x !== this.px || p.y !== this.py) {
+      if (p.kind === 'poisonCloud') this.explode(p, p.x, p.y, undefined);
+      return;
+    }
+    if (p.kind === 'poisonCloud') {
+      this.explode(p, p.x, p.y, undefined);
+      return;
+    }
+    if (p.kind !== 'fire' && p.kind !== 'lightning') return;
+    let dmg = explosionDamage(p.energy, (n) => this.rng.int(n));
+    if (p.kind === 'lightning') dmg >>= 1;
+    if (dmg <= 0) return;
+    const n = this.damageAll(dmg, 'fire');
+    this.messages.push(
+      n > 0 ? `The ${p.kind === 'fire' ? 'fireball' : 'lightning'} explodes in your face!` : 'The blast fizzles against the party.',
+    );
+    this.flushChampionLogs();
+  }
+
+  /** Hurt every living champion by about `attack` (varying by up to one eighth either way). */
+  private damageAll(attack: number, type: AttackType): number {
+    if (attack <= 0) return 0;
+    const spread = (attack >> 3) + 1;
+    const base = attack - spread;
+    let count = 0;
+    for (const c of this.livingChampions) {
+      const amount = Math.max(1, base + this.rng.int(spread << 1));
+      if (c.takeAttack(amount, WOUND_ALL, type, this.shields, this.rng) > 0) count++;
+    }
+    return count;
+  }
+
   /** Resolve a projectile striking monster `m` at the monster's cell, and remove the projectile. */
   private hitByProjectile(p: Projectile, m: Monster): void {
     this.projectiles = this.projectiles.filter((o) => o !== p);
@@ -839,11 +876,13 @@ export class Game {
     const tile = this.map.at(nx, ny);
     if (tile === Tile.DoorClosed) {
       this.hitDoor(p, nx, ny);
+      this.blastHere(p);
       this.fx(p.x, p.y, color, 'hit', p.kind, p.power);
       remove();
       return;
     }
     if (tile === Tile.Wall) {
+      this.blastHere(p);
       this.fx(p.x, p.y, color, 'hit', p.kind, p.power);
       remove();
       return;

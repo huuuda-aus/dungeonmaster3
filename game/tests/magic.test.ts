@@ -331,3 +331,61 @@ describe('hitting moving monsters', () => {
     expect(g.projectiles.length).toBe(0);
   });
 });
+
+describe('casting into a wall', () => {
+  const wallRoom = () => new Game(GameMap.parse(['#####', '#@..#', '#####'], {}), 4);
+  const facingWall = (g: Game) => { g.dir = 3; return g; }; // west: wall right in front
+
+  it('a fireball cast at an adjacent wall hurts the whole party', () => {
+    const g = facingWall(wallRoom());
+    master(g, VEYR);
+    const before = g.champions.map((c) => c.health);
+    enter(g, VEYR, [3, 4, 4]);
+    expect(g.castSpell(VEYR)).toBe('ok');
+    run(g, 6);
+    g.champions.forEach((c, i) => expect(c.health, c.name).toBeLessThan(before[i]!));
+    expect(g.messages.some((m) => m.includes('explodes in your face'))).toBe(true);
+  });
+
+  it('does not hurt the party when the wall is further away', () => {
+    const g = wallRoom(); // facing east with open floor ahead
+    master(g, VEYR);
+    const before = g.champions.map((c) => c.health);
+    enter(g, VEYR, [3, 4, 4]);
+    g.castSpell(VEYR);
+    run(g, 40);
+    g.champions.forEach((c, i) => expect(c.health).toBe(before[i]));
+  });
+
+  it('does not hurt the fallen, and a fire shield soaks it up', () => {
+    const g = facingWall(wallRoom());
+    master(g, VEYR);
+    g.champions[BRANN_I]!.health = 0;
+    g.shields.fire = 500;
+    const before = g.champions.map((c) => c.health);
+    enter(g, VEYR, [3, 4, 4]);
+    g.castSpell(VEYR);
+    run(g, 6);
+    expect(g.champions[BRANN_I]!.health).toBe(0);
+    expect(g.champions[1]!.health).toBe(before[1]);
+  });
+
+  it('lightning into a wall also hurts the party, a light spell does not', () => {
+    const g = facingWall(wallRoom());
+    master(g, VEYR);
+    const before = g.champions.map((c) => c.health);
+    enter(g, VEYR, [6, 3, 3, 5]);
+    g.castSpell(VEYR);
+    run(g, 6);
+    expect(g.champions.some((c, i) => c.health < before[i]!)).toBe(true);
+
+    const g2 = facingWall(wallRoom());
+    master(g2, VEYR);
+    const b2 = g2.champions.map((c) => c.health);
+    enter(g2, VEYR, [3, 4]); // magic torch
+    g2.castSpell(VEYR);
+    run(g2, 6);
+    g2.champions.forEach((c, i) => expect(c.health).toBe(b2[i]));
+  });
+});
+const BRANN_I = 0;
