@@ -58,6 +58,46 @@ function blur3(src: Float32Array, nx: number, ny: number, nz: number, sigma: num
   return a;
 }
 
+/**
+ * Straight, square-cornered tunnels: one flat quad per wall face, floor and ceiling cell.
+ * Open cells are the walkable tiles plus doors (open or closed), as in the organic mesh.
+ */
+export function buildBoxGeometry(map: GameMap): THREE.BufferGeometry {
+  const open = (x: number, z: number): boolean => map.walkable(x, z) || map.at(x, z) === Tile.DoorClosed;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  const index: number[] = [];
+  /** A quad given by 4 corners in counter-clockwise order seen from the side the normal points to. */
+  const quad = (c: number[][], n: [number, number, number]): void => {
+    const base = positions.length / 3;
+    for (const p of c) {
+      positions.push(p[0]!, p[1]!, p[2]!);
+      normals.push(n[0], n[1], n[2]);
+      colors.push(1, 1, 1);
+    }
+    index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  for (let z = 0; z < map.height; z++) {
+    for (let x = 0; x < map.width; x++) {
+      if (!open(x, z)) continue;
+      const x0 = x - 0.5, x1 = x + 0.5, z0 = z - 0.5, z1 = z + 0.5;
+      quad([[x0, 0, z0], [x0, 0, z1], [x1, 0, z1], [x1, 0, z0]], [0, 1, 0]); // floor
+      quad([[x0, 1, z0], [x1, 1, z0], [x1, 1, z1], [x0, 1, z1]], [0, -1, 0]); // ceiling
+      if (!open(x, z - 1)) quad([[x1, 0, z0], [x1, 1, z0], [x0, 1, z0], [x0, 0, z0]], [0, 0, 1]); // north wall, faces +z
+      if (!open(x, z + 1)) quad([[x0, 0, z1], [x0, 1, z1], [x1, 1, z1], [x1, 0, z1]], [0, 0, -1]); // south wall, faces -z
+      if (!open(x - 1, z)) quad([[x0, 0, z0], [x0, 1, z0], [x0, 1, z1], [x0, 0, z1]], [1, 0, 0]); // west wall, faces +x
+      if (!open(x + 1, z)) quad([[x1, 0, z1], [x1, 1, z1], [x1, 1, z0], [x1, 0, z0]], [-1, 0, 0]); // east wall, faces -x
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(index);
+  return geo;
+}
+
 /** Build the carved tunnel mesh for a map. Open cells = walkable tiles and doors (open or closed). */
 export function buildTunnelGeometry(map: GameMap, opt: TunnelOptions = DEFAULT_TUNNEL): THREE.BufferGeometry {
   const R = opt.resolution;
@@ -221,6 +261,9 @@ export interface SurfaceStyle {
   /** World units per texture tile for the colour and height maps are 1 / these. */
   texScale: number;
   heightScale: number;
+  /** Brightness of floors and ceilings relative to walls (default 1.06 and 0.82). */
+  floor?: number;
+  ceiling?: number;
 }
 
 export interface TunnelMaterial {
@@ -245,6 +288,8 @@ export function createTunnelMaterial(style: SurfaceStyle): TunnelMaterial {
     shader.uniforms['uHeightMap'] = { value: heightMap };
     shader.uniforms['uTexScale'] = { value: style.texScale };
     shader.uniforms['uHeightScale'] = { value: style.heightScale };
+    shader.uniforms['uFloor'] = { value: style.floor ?? 1.06 };
+    shader.uniforms['uCeil'] = { value: style.ceiling ?? 0.82 };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * normal);');
@@ -256,6 +301,8 @@ uniform float uSee;
 uniform float uBump;
 uniform float uTexScale;
 uniform float uHeightScale;
+uniform float uFloor;
+uniform float uCeil;
 uniform sampler2D uHeightMap;
 // Bump mapping for surfaces without UVs: perturb the normal by the screen-space slope of a height value.
 vec3 bumpNormal(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDirection) {
@@ -270,13 +317,15 @@ vec3 bumpNormal(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDirection) {
       .replace('#include <map_fragment>', `
         vec3 tw = pow(abs(normalize(vWNrm)), vec3(4.0));
         tw /= (tw.x + tw.y + tw.z);
+        // Cells are centred on whole numbers, so shift by half a cell: patterns then start at cell edges.
+        vec3 tp = vWPos + vec3(0.5, 0.0, 0.5);
         float sc = uTexScale;
-        vec4 tcol = texture2D(map, vWPos.zy * sc) * tw.x + texture2D(map, vWPos.xz * sc) * tw.y + texture2D(map, vWPos.xy * sc) * tw.z;
-        // floors a touch lighter, ceilings a touch darker
-        tcol.rgb *= mix(vec3(1.0), vec3(1.06, 1.06, 1.1), clamp(vWNrm.y, 0.0, 1.0));
-        tcol.rgb *= mix(vec3(1.0), vec3(0.82), clamp(-vWNrm.y, 0.0, 1.0));
+        vec4 tcol = texture2D(map, tp.zy * sc) * tw.x + texture2D(map, tp.xz * sc) * tw.y + texture2D(map, tp.xy * sc) * tw.z;
+        // floors and ceilings differ in brightness from the walls
+        tcol.rgb *= mix(1.0, uFloor, clamp(vWNrm.y, 0.0, 1.0));
+        tcol.rgb *= mix(1.0, uCeil, clamp(-vWNrm.y, 0.0, 1.0));
         float hs = uHeightScale;
-        float hv = texture2D(uHeightMap, vWPos.zy * hs).r * tw.x + texture2D(uHeightMap, vWPos.xz * hs).r * tw.y + texture2D(uHeightMap, vWPos.xy * hs).r * tw.z;
+        float hv = texture2D(uHeightMap, tp.zy * hs).r * tw.x + texture2D(uHeightMap, tp.xz * hs).r * tw.y + texture2D(uHeightMap, tp.xy * hs).r * tw.z;
         float bumpH = hv + 0.1 * dot(tcol.rgb, vec3(0.3333));
         // cracks, pits and mortar are darker
         tcol.rgb *= mix(0.5, 1.0, smoothstep(0.05, 0.5, hv));

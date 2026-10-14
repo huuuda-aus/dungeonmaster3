@@ -5,7 +5,10 @@ import type { SurfaceStyle } from './organic';
 export interface Theme {
   id: string;
   name: string;
+  /** Organic tunnel settings. Ignored when `boxy` is set. */
   tunnel: TunnelOptions;
+  /** Use flat walls and square corners instead of carved tunnels. */
+  boxy?: boolean;
   surface: SurfaceStyle;
   doorColor: number;
 }
@@ -24,7 +27,8 @@ export const THEMES: Theme[] = [
     id: 'blocks',
     name: 'Stone blocks (straight walls)',
     tunnel: { ...BASE, roundness: 0.05, lump: 0, bump: 0, widen: 0 },
-    surface: { surface: 'blocks', roughness: 0.92, bump: 10, texScale: 0.5, heightScale: 0.5 },
+    boxy: true,
+    surface: { surface: 'blocks', roughness: 0.92, bump: 8, texScale: 1, heightScale: 1, floor: 0.66, ceiling: 0.5 },
     doorColor: 0x6b4a2b,
   },
   {

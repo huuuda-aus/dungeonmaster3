@@ -5,7 +5,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { iconDataUrl } from '../icons';
 import { Fx } from './fx';
-import { buildTunnelGeometry, createTunnelMaterial, type TunnelMaterial } from './organic';
+import { buildBoxGeometry, buildTunnelGeometry, createTunnelMaterial, type TunnelMaterial } from './organic';
+import { doorTextures } from './textures';
 import { getTheme } from './themes';
 import type { Game } from '../sim/game';
 import { PROJECTILE_COLOR, type Projectile } from '../sim/magic';
@@ -72,6 +73,9 @@ function glowTexture(): THREE.CanvasTexture {
 
 interface Pulse { sprite: THREE.Sprite; born: number; life: number; size: number; mult: number }
 
+/** How far a door panel slides up when opened (it ends inside the ceiling rock). */
+const DOOR_LIFT = 1.3;
+
 /** The open-door spell is a small effect: 80% smaller than the generic spell visuals. */
 const OPEN_DOOR_SCALE = 0.2;
 
@@ -93,6 +97,7 @@ export class View {
   private castLight = 0;
   private tunnel!: TunnelMaterial;
   private themeId = '';
+  private doorTex: ReturnType<typeof doorTextures> | null = null;
   private levelObjects: THREE.Object3D[] = [];
   private shellCache = new Map<string, { geo: THREE.BufferGeometry; tunnel: TunnelMaterial }>();
   private footGroup = new THREE.Group();
@@ -167,7 +172,10 @@ export class View {
 
     let entry = this.shellCache.get(theme.id);
     if (!entry) {
-      entry = { geo: buildTunnelGeometry(map, theme.tunnel), tunnel: createTunnelMaterial(theme.surface) };
+      entry = {
+        geo: theme.boxy ? buildBoxGeometry(map) : buildTunnelGeometry(map, theme.tunnel),
+        tunnel: createTunnelMaterial(theme.surface),
+      };
       this.shellCache.set(theme.id, entry);
     }
     this.tunnel = entry.tunnel;
@@ -180,7 +188,12 @@ export class View {
     this.scene.add(shell);
     this.levelObjects.push(shell);
 
-    const doorMat = new THREE.MeshStandardMaterial({ color: theme.doorColor, roughness: 0.9 });
+    if (!this.doorTex) this.doorTex = doorTextures();
+    // Plank texture, tinted a little towards the theme's door colour.
+    const doorMat = new THREE.MeshStandardMaterial({
+      map: this.doorTex.map, bumpMap: this.doorTex.bump, bumpScale: 2.2, roughness: 0.85,
+      color: new THREE.Color(0xffffff).lerp(new THREE.Color(theme.doorColor), 0.3),
+    });
     // Wider than the doorway so the edges sit inside the rock and leave no gaps.
     const span = 1 + 2 * theme.tunnel.widen + 0.5;
     for (let y = 0; y < map.height; y++) {
@@ -192,6 +205,8 @@ export class View {
         const geo = new THREE.BoxGeometry(horizontal ? span : 0.14, 1.3, horizontal ? 0.14 : span).translate(x, 0.5, y);
         const d = new THREE.Mesh(geo, doorMat);
         d.userData['door'] = true;
+        d.userData['slide'] = t === Tile.DoorOpen ? 1 : 0;
+        if (t === Tile.DoorOpen) d.position.y = DOOR_LIFT;
         d.castShadow = d.receiveShadow = true;
         this.scene.add(d);
         this.levelObjects.push(d);
@@ -481,9 +496,14 @@ export class View {
       this.castLight * 8;
     (this.scene.fog as THREE.Fog).far = LIGHT.fogFar * Math.max(0.6, boost);
 
+    // Doors slide up into the ceiling when opened.
     for (const [key, mesh] of this.doors) {
-      const open = g.map.tiles[key] === Tile.DoorOpen;
-      mesh.visible = !open;
+      const target = g.map.tiles[key] === Tile.DoorOpen ? 1 : 0;
+      const cur = (mesh.userData['slide'] as number | undefined) ?? target;
+      const next = cur + (target - cur) * (1 - Math.exp(-dt * 6));
+      mesh.userData['slide'] = Math.abs(target - next) < 0.004 ? target : next;
+      mesh.position.y = (mesh.userData['slide'] as number) * DOOR_LIFT;
+      mesh.visible = (mesh.userData['slide'] as number) < 0.995; // fully raised: hidden in the rock
     }
     const alive = new Set<number>();
     for (const m of g.monsters) {
