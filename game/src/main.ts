@@ -59,6 +59,7 @@ function start(): void {
   viewEl.querySelector('canvas')?.remove();
   game = new Game(level1(), (Date.now() & 0xffff) || 1);
   view = new View(viewEl, game, settings.theme);
+  hud?.closeMenu();
   inventory?.destroy();
   inventory = new Inventory(viewEl, () => game);
   hud = new Hud(hudEl, logEl, game, (i) => select(i), (i) => inventory.toggle(i));
@@ -125,10 +126,6 @@ function updateFeet(): void {
 }
 
 let lastHealth = 0;
-function doAttack(i: number): void {
-  game.quickAction(i);
-}
-
 const KEYS: Record<string, Command> = {
   KeyW: 'forward', ArrowUp: 'forward',
   KeyS: 'back', ArrowDown: 'back',
@@ -155,9 +152,16 @@ addEventListener('keydown', (e) => {
   }
   const rune = RUNE_KEYS.indexOf(e.code);
   if (rune >= 0 && !e.repeat) { game.addSymbol(selected, rune); return; }
-  if (e.code >= 'Digit1' && e.code <= 'Digit4' && !e.repeat) {
-    const i = Number(e.code.slice(5)) - 1;
-    if (e.shiftKey) select(i); else doAttack(i);
+  if (e.code >= 'Digit1' && e.code <= 'Digit8' && !e.repeat) {
+    const n = Number(e.code.slice(5));
+    e.preventDefault();
+    // Shift + 1-4: make that champion the active caster.
+    if (e.shiftKey && n <= 4) { select(n - 1); return; }
+    // With an action menu open, 1-3 choose its actions.
+    if (hud.menuOpen) { if (n <= 3) hud.chooseAction(n); return; }
+    // 1-4 open a champion's weapon-hand menu; 5-8 open the shield-hand menu of champion 1-4.
+    if (n <= 4) hud.openHandMenu(n - 1, 1);
+    else hud.openHandMenu(n - 5, 0);
     return;
   }
   if (KEYS[e.code]) {

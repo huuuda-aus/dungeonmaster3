@@ -29,7 +29,7 @@
   .champ.dead { opacity:.35; }
   .champ.busy { border-color:#5b4f66; }
   .champ { display:flex; gap:8px; }
-  .champ .info { flex:1; min-width:0; }
+  .champ .info { flex:1; min-width:0; container-type:inline-size; }
   .champ h3 { margin:0 0 4px; font-size:14px; cursor:pointer; }
   .vbars { cursor:pointer; }
   .skills { display:grid; grid-template-columns:1fr 1fr; gap:0 8px; font-size:12px; color:var(--dim); }
@@ -105,10 +105,9 @@
                 filter:drop-shadow(0 2px 6px #000); }
   #cursoritem svg { width:100%; height:100%; }
   .champ.droptarget { border-color:#7bc47a; box-shadow:0 0 10px #3a7a3a; cursor:copy; }
-  .actmenu .sep { border-top:1px solid var(--edge); margin:3px 0; }
   @media (max-width:1100px) { #inv .invbody { grid-template-columns:1fr; } }
   .hands { display:flex; gap:8px; margin-top:8px; }
-  .hand { position:relative; width:88px; height:88px; padding:10px; background:#1a161e; color:var(--text);
+  .hand { position:relative; width:33.3cqw; height:132px; padding:10px; background:#1a161e; color:var(--text);
           border:1px solid var(--edge); border-radius:6px; cursor:pointer; overflow:hidden; }
   .hand:hover:not(:disabled) { background:#2a2332; border-color:#7a6a90; }
   .hand[data-hand="1"] { order:-1; } /* weapon (action) hand on the left, shield (ready) hand on the right */
@@ -118,6 +117,8 @@
   .hand .cd { position:absolute; left:0; right:0; bottom:0; height:0; background:rgba(0,0,0,.6); transition:height .12s linear; pointer-events:none; }
   .actmenu { position:fixed; z-index:20; min-width:200px; background:#1d1921; border:1px solid #7a6a90;
              border-radius:6px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,.6); display:flex; flex-direction:column; gap:4px; }
+  kbd { font:inherit; font-size:11px; background:#0e0c10; border:1px solid #4a4056; border-radius:3px; padding:0 5px; margin-right:7px; color:#cbbfe0; }
+  .hand kbd { position:absolute; top:4px; left:4px; margin:0; padding:0 4px; font-size:12px; opacity:.85; pointer-events:none; }
   .actmenu .title { color:var(--dim); font-size:11px; padding:0 4px 3px; }
   .actmenu .none { color:var(--dim); padding:4px; font-size:12px; }
   .actmenu button { display:flex; justify-content:space-between; align-items:baseline; gap:12px; background:#2a2332;
@@ -155,7 +156,7 @@
 <body>
 <div id="app">
   <div id="view">
-    <div id="help">W/S move · A/D strafe · Q/E turn · P pause · I inventory · 1-4 quick attack · Shift+1-4 pick caster · Z X C V B N runes · Enter cast · Bksp recant</div>
+    <div id="help">W/S move · A/D strafe · Q/E turn · P pause · I inventory · 1-4 weapon hand, 5-8 shield hand, then 1-3 action · Shift+1-4 pick caster · Z X C V B N runes · Enter cast · Bksp recant</div>
     <div id="log"></div>
     <button id="gear" title="Settings">⚙</button>
     <div id="settings" style="display:none">

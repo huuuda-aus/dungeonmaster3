@@ -24,7 +24,8 @@ npm run build    # typecheck + production build
 | Q / E (or arrow keys) | Turn left / right |
 | Click a hand icon | Open that hand's action list; click an action to perform it |
 | Right-click a hand | Lift the item in it onto the cursor |
-| 1-4 | Quick attack: the first action of that champion's weapon hand |
+| 1-4 | Open that champion's weapon-hand action menu; then 1-3 picks an action (a locked one does nothing) |
+| 5-8 | The same for the shield hand of champion 1-4 |
 | Shift + 1-4, or click a champion's name | Make that champion the active caster |
 | Click a champion's bars, or I | Open that champion's inventory |
 | Click an item in the world | Take it (it goes to the active champion's pack, else onto the cursor) |

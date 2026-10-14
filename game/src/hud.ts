@@ -10,6 +10,7 @@ export class Hud {
   private lastLogLen = 0;
   private menu: HTMLElement | null = null;
   private menuFor: { champ: number; hand: number } | null = null;
+  private menuEntries: ReturnType<Game['availableActions']> = [];
 
   constructor(
     root: HTMLElement, logEl: HTMLElement, private game: Game,
@@ -24,8 +25,8 @@ export class Hud {
         <div class="info">
           <h3><span>${i + 1}. ${c.name}</span></h3>
           <div class="hands">
-            <button class="hand" data-hand="0"><span class="ico"></span><span class="cd"></span></button>
-            <button class="hand" data-hand="1"><span class="ico"></span><span class="cd"></span></button>
+            <button class="hand" data-hand="0"><span class="ico"></span><span class="cd"></span><kbd>${i + 5}</kbd></button>
+            <button class="hand" data-hand="1"><span class="ico"></span><span class="cd"></span><kbd>${i + 1}</kbd></button>
           </div>
         </div>
         <div class="vbars">
@@ -74,6 +75,28 @@ export class Hud {
 
   private toggleMenu(champ: number, hand: number, anchor: HTMLElement): void {
     if (this.menuFor?.champ === champ && this.menuFor.hand === hand) { this.closeMenu(); return; }
+    this.showMenu(champ, hand, anchor);
+  }
+
+  /** Is an action menu open? While it is, the number keys 1-3 choose its actions. */
+  get menuOpen(): boolean { return this.menu !== null; }
+
+  /** Keyboard: open a champion's hand menu (0 = shield/ready hand, 1 = weapon/action hand). */
+  openHandMenu(champ: number, hand: number): void {
+    const anchor = this.panels[champ]?.querySelector<HTMLElement>(`.hand[data-hand="${hand}"]`);
+    if (anchor) this.showMenu(champ, hand, anchor);
+  }
+
+  /** Keyboard: pick the n-th action (1-based) of the open menu. A locked or missing one does nothing. */
+  chooseAction(n: number): void {
+    const e = this.menuEntries[n - 1];
+    if (!this.menuFor || !e || !e.unlocked) return;
+    const { champ, hand } = this.menuFor;
+    this.game.performAction(champ, hand, e.action.id);
+    this.closeMenu();
+  }
+
+  private showMenu(champ: number, hand: number, anchor: HTMLElement): void {
     this.closeMenu();
     const g = this.game;
     const ch = g.champions[champ]!;
@@ -87,44 +110,36 @@ export class Hud {
     title.textContent = `${ch.name} · ${item ? item.name : 'Bare hand'}`;
     menu.appendChild(title);
     const list = g.availableActions(champ, hand);
+    this.menuEntries = list;
     if (!list.length) {
       const none = document.createElement('div');
       none.className = 'none';
       none.textContent = 'Nothing to do with this.';
       menu.appendChild(none);
     }
-    for (const e of list) {
+    list.forEach((e, n) => {
       const b = document.createElement('button');
       b.disabled = !e.unlocked;
       const skill = SKILL_NAMES[e.action.skill] ?? '';
+      const key = `<kbd>${n + 1}</kbd>`;
       b.innerHTML = e.unlocked
-        ? `<b>${e.action.name}</b><small>${skill} · ${e.action.ticks}t</small>`
-        : `<b>${e.action.name}</b><small>needs ${skill} ${e.minLevel} (you ${e.level})</small>`;
+        ? `<b>${key}${e.action.name}</b><small>${skill} · ${e.action.ticks}t</small>`
+        : `<b>${key}${e.action.name}</b><small>needs ${skill} ${e.minLevel} (you ${e.level})</small>`;
       b.addEventListener('click', () => {
         g.performAction(champ, hand, e.action.id);
         this.closeMenu();
       });
       menu.appendChild(b);
-    }
-    if (item) {
-      const sep = document.createElement('div');
-      sep.className = 'sep';
-      menu.appendChild(sep);
-      const mkBtn = (label: string, hint: string, fn: () => void): void => {
-        const b = document.createElement('button');
-        b.innerHTML = `<b>${label}</b><small>${hint}</small>`;
-        b.addEventListener('click', () => { fn(); this.closeMenu(); });
-        menu.appendChild(b);
-      };
-      mkBtn('Put in pack', 'stow', () => g.stowHand(champ, hand));
-      mkBtn('Pick up', 'right-click', () => { if (!g.cursor) g.clickSlot(champ, hand); });
-    }
+    });
     document.body.appendChild(menu);
-    const r = anchor.getBoundingClientRect();
-    const mw = menu.offsetWidth;
+    // Open over the space to the right of the bars (the card's info area), covering it.
+    const area = (anchor.closest('.info') ?? anchor) as HTMLElement;
+    const r = area.getBoundingClientRect();
+    menu.style.width = `${r.width}px`;
+    menu.style.minHeight = `${r.height}px`;
     const mh = menu.offsetHeight;
-    menu.style.left = `${Math.max(8, r.left - mw - 8)}px`;
-    menu.style.top = `${Math.min(innerHeight - mh - 8, Math.max(8, r.top - 8))}px`;
+    menu.style.left = `${r.left}px`;
+    menu.style.top = `${Math.max(8, Math.min(innerHeight - mh - 8, r.top))}px`;
     this.menu = menu;
     this.menuFor = { champ, hand };
   }
