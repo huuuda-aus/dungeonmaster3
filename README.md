@@ -1,56 +1,110 @@
 # Dungeon crawler remake (working title TBD)
 
-Browser-based, real-time, grid-based dungeon crawler. Rules faithful to
-*Dungeon Master II: The Legend of Skullkeep*. Rebranded: own name, own art,
-audio, maps, text and lore. Only mechanics are reused.
-
-## Decisions
-
-- **Platform:** browser.
-- **Stack (proposed):** TypeScript + Vite + Three.js.
-  - Simulation is a pure, deterministic TS module with no rendering imports
-    (seedable PRNG, tick-based timeline). Rendering is a separate layer.
-  - Three.js for the first-person grid view (lets us do lighting, fog,
-    particles for spells). A plain Canvas 2D "classic sprite" renderer can
-    be added later behind the same view interface.
-  - Tests with Vitest: rules in `spec/` become unit tests.
-- **Clean room:** `research/` is read-only reference. Never copy code or
-  assets from it. Specs in `spec/` are written in our own words.
+A browser-based, real-time, grid-based dungeon crawler in the spirit of
+*Dungeon Master* and *Dungeon Master II: The Legend of Skullkeep*. The rules
+follow the originals; the name, art, audio, maps, text and lore are our own.
+Only mechanics are reused.
 
 ## Run
 
 ```
-cd game && npm install
+cd game
+npm install
 npm run dev      # http://localhost:5173
-npm test         # simulation unit tests
+npm test         # unit tests (Vitest)
+npm run build    # typecheck + production build
 ```
 
-Controls: W/S move, A/D strafe, Q/E turn, 1-4 quick attack, Shift+1-4 pick the caster; click a hand icon to choose an action. Click a champion's bars (or press I) to open the inventory.
-Casting: enter one rune per step (Power, Element, Form, Class) with the buttons or Z X C V B N, then Enter to cast; Backspace recants the last rune. Torch = power + rune 4, fireball = power + 4 + 4.
+## Controls
+
+| Input | Action |
+|---|---|
+| W / S | Move forward / back |
+| A / D | Strafe left / right |
+| Q / E (or arrow keys) | Turn left / right |
+| Click a hand icon | Open that hand's action list; click an action to perform it |
+| Right-click a hand | Lift the item in it onto the cursor |
+| 1-4 | Quick attack: the first action of that champion's weapon hand |
+| Shift + 1-4, or click a champion's name | Make that champion the active caster |
+| Click a champion's bars, or I | Open that champion's inventory |
+| Click an item in the world | Take it (it goes to the active champion's pack, else onto the cursor) |
+| Click upper half of the view, holding an item | Throw it; lower half drops it at your feet |
+| Z X C V B N | Choose rune 1-6 for the current spell step |
+| Enter / Space | Cast; Backspace recants the last rune |
+| P | Pause |
+| G | Toggle the bloom glow |
+| Esc | Close menus / inventory |
+| R | Restart after the party falls |
+
+The gear icon in the corner of the view has a setting to pause automatically
+while an inventory is open. It is off by default, as in the originals.
+
+### Casting
+
+A spell is built from runes in four steps, six runes each:
+**Power, Element, Form, Class**. Each rune costs mana when chosen. You can cast
+once the runes so far match a known spell: Magic Torch is power + rune 4,
+Fireball is power + 4 + 4. Higher power needs a higher skill level; trying
+spells above your level fails but trains the skill. See `spec/02-magic.md` for
+the full spell table.
+
+## What is in
+
+- Deterministic tick simulation (seeded RNG, event timeline) kept free of any
+  rendering code, so it can be unit-tested.
+- Four champions with stats, 20 skills, experience, level-ups, hunger and thirst,
+  regeneration and wounds.
+- Two hands per champion, each with its own actions (from the original action
+  tables), cooldowns, stamina costs and defense modifiers. Two-handed weapons.
+- Melee, thrown items, and 25 rune spells (projectiles, shields, light,
+  invisibility, potions and more).
+- Monsters that path toward the party and attack, including a non-material one
+  that only one spell can hurt.
+- Inventory: 25 slots per champion, items on the floor, eating, drinking,
+  potions, monster loot, belongings dropped on death.
+- Three.js renderer: a nearly dark dungeon lit by the party's own light,
+  shadows, particle fireballs, and a bloom pass.
 
 ## Layout
 
 ```
-game/        the playable prototype (src/sim = rules, src/render = Three.js)
-spec/        rules spec, tagged by confidence ([DM1] / [DM2-fn] / [DM2-ok])
-research/    cloned reference (reDM2). Reference only.
+game/        the playable prototype
+  src/sim/     rules (no rendering imports): champions, actions, magic, items, game loop
+  src/render/  Three.js view and particle effects
+  src/         HUD, inventory, spell bar, settings
+  tests/       Vitest suites
+spec/        rules specs, tagged by confidence
 ```
+
+## Specs
+
+The specs describe the rules in our own words. Each rule carries a tag:
+`[DM1]` seen only in the DM1/CSB reference (a hypothesis for DM2),
+`[DM2-fn]` / `[DM2-ok]` checked against DM2 (nothing is yet), `[design]` our own
+choice.
+
+- `spec/00-conventions.md`
+- `spec/01-champions-and-combat.md`: stats, skills, damage, wounds, regeneration
+- `spec/02-magic.md`: rune system and the spell table
+- `spec/03-actions.md`: hands and combat actions
+
+## Clean room
+
+Reference material used while writing the specs (a clone of the reDM2 project
+and reconstructed DM1/CSB source) lives in an untracked `research/` folder and is
+**not** part of this repository: it is third-party work. Nothing in `game/` is
+copied from it; the code is written from the specs.
 
 ## Status
 
-- [x] spec/00 conventions
-- [x] spec/01 champions, skills, damage, regen (from DM1 reference)
-- [x] spec/02 magic (4-step runes, 25-spell table, mana, skill gate)
-- [x] spec/03 hands and combat actions (DM1 action tables, melee formula)
-- [ ] spec/03b items (weapon/armour tables, weights)
-- [ ] spec/04 monsters (stats, AI, movement, attacks)
-- [ ] spec/05 world (tiles, doors, sensors, triggers, timeline)
-- [ ] spec/06 DM2 additions (outdoors, day/night, shops, NPCs, auto-map)
-- [ ] verify spec against DM2 (needs a DM2 copy)
-- [x] scaffold Vite + TS + Three.js project
-- [x] sim: seeded RNG, event timeline, tick loop, champions, XP/levelling, melee combat, monster AI + pathing, regen/hunger, doors
-- [x] 14 unit tests passing
-- [ ] browser playtest and tuning (renderer not yet visually verified)
-- [x] magic: 4-step rune system with the full spell table (potions/Zokathra wait for inventory); 40 tests
-- [x] inventory: 25 slots per champion, pointer item, floor items, eating/drinking, potions, loot, belongings drop on death; 78 tests
-- [ ] ranged monsters, stairs/multi-level, save/load, sound, throwing/shooting
+Done: simulation, combat, magic, inventory, throwing, pause, and the
+renderer. 92 unit tests pass.
+
+Not yet:
+
+- Specs for items, monsters and the world (`spec/03b` to `spec/05`).
+- Shooting (bows and slings) and ranged or spellcasting monsters.
+- Stairs and multiple levels, keys, levers, pressure plates.
+- Save and load, sound.
+- Checking the rules against DM2 itself (needs a copy of the game); most
+  numbers come from DM1 and a few are our own tuning.
