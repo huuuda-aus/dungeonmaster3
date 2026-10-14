@@ -3,43 +3,14 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { iconDataUrl } from '../icons';
 import { Fx } from './fx';
+import { buildTunnelGeometry, createTunnelMaterial, type TunnelMaterial } from './organic';
+import { getTheme } from './themes';
 import type { Game } from '../sim/game';
 import { PROJECTILE_COLOR, type Projectile } from '../sim/magic';
 import type { Monster } from '../sim/monsters';
 import { DX, DY, Tile } from '../sim/world';
-
-/** Procedural noisy stone texture (no external assets). */
-function stoneTexture(base: [number, number, number], seed: number): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d')!;
-  let s = seed;
-  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-  g.fillStyle = `rgb(${base.join(',')})`;
-  g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 1800; i++) {
-    const v = Math.floor(rnd() * 60 - 30);
-    g.fillStyle = `rgba(${base[0] + v},${base[1] + v},${base[2] + v},0.5)`;
-    g.fillRect(rnd() * 128, rnd() * 128, 1 + rnd() * 3, 1 + rnd() * 3);
-  }
-  g.strokeStyle = 'rgba(0,0,0,.45)';
-  g.lineWidth = 2;
-  for (let y = 0; y <= 128; y += 32) {
-    g.beginPath(); g.moveTo(0, y); g.lineTo(128, y); g.stroke();
-    const off = (y / 32) % 2 ? 32 : 0;
-    for (let x = off; x < 128; x += 64) {
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 32); g.stroke();
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.magFilter = THREE.NearestFilter;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 
 /** Monster billboard drawn procedurally from its colour. */
 function monsterTexture(color: number, kind: string): THREE.CanvasTexture {
@@ -120,7 +91,10 @@ export class View {
   private pulses: Pulse[] = [];
   private seenEffect = 0;
   private castLight = 0;
-  private wallMat!: THREE.MeshStandardMaterial;
+  private tunnel!: TunnelMaterial;
+  private themeId = '';
+  private levelObjects: THREE.Object3D[] = [];
+  private shellCache = new Map<string, { geo: THREE.BufferGeometry; tunnel: TunnelMaterial }>();
   private footGroup = new THREE.Group();
   private footKey = '';
   private fx!: Fx;
@@ -133,15 +107,15 @@ export class View {
   /** Toggle the bloom glow pass (key G). */
   bloomOn = true;
 
-  constructor(private host: HTMLElement, private game: Game) {
+  constructor(private host: HTMLElement, private game: Game, themeId: string) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     host.prepend(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 40);
     this.scene.background = new THREE.Color(0x050406);
     this.scene.fog = new THREE.Fog(0x020203, LIGHT.fogNear, LIGHT.fogFar);
-    this.scene.add(new THREE.AmbientLight(0x1c1a26, LIGHT.ambient));
-    this.torch = new THREE.PointLight(0xffa860, LIGHT.partyIntensity, LIGHT.partyDist, 1.6);
+    this.scene.add(new THREE.AmbientLight(0x141a30, LIGHT.ambient));
+    this.torch = new THREE.PointLight(0xe6dccb, LIGHT.partyIntensity, LIGHT.partyDist, 1.6);
     this.scene.add(this.torch);
     // Shadows keep the party light from shining through walls.
     this.renderer.shadowMap.enabled = true;
@@ -150,7 +124,8 @@ export class View {
     this.torch.shadow.bias = -0.0008;
     this.torch.shadow.normalBias = 0.03;
     this.fx = new Fx(this.scene, this.glow);
-    this.buildLevel();
+    this.scene.add(this.footGroup);
+    this.setTheme(themeId);
     try {
       const composer = new EffectComposer(this.renderer);
       composer.addPass(new RenderPass(this.scene, this.camera));
@@ -171,54 +146,58 @@ export class View {
     return -dir * (Math.PI / 2);
   }
 
-  private buildLevel(): void {
+  /**
+   * Switch the look of the dungeon: rebuilds the tunnel mesh and doors for a theme.
+   * Meshes and textures are cached per theme, so going back to one is instant.
+   */
+  setTheme(id: string): void {
+    const theme = getTheme(id);
+    if (this.themeId === theme.id) return;
+    this.themeId = theme.id;
+    for (const o of this.levelObjects) {
+      this.scene.remove(o);
+      if (o instanceof THREE.Mesh && o.userData['door']) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    }
+    this.levelObjects = [];
+    this.doors.clear();
     const { map } = this.game;
-    const wallMat = new THREE.MeshStandardMaterial({ map: stoneTexture([92, 88, 96], 3), roughness: 1 });
-    this.wallMat = wallMat;
-    this.scene.add(this.footGroup);
-    const floorMat = new THREE.MeshStandardMaterial({ map: stoneTexture([54, 48, 44], 9), roughness: 1 });
-    const ceilMat = new THREE.MeshStandardMaterial({ map: stoneTexture([40, 38, 46], 21), roughness: 1 });
-    const doorMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 });
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const plane = new THREE.PlaneGeometry(1, 1);
 
-    const walls: THREE.BufferGeometry[] = [];
-    const floors: THREE.BufferGeometry[] = [];
-    const ceils: THREE.BufferGeometry[] = [];
+    let entry = this.shellCache.get(theme.id);
+    if (!entry) {
+      entry = { geo: buildTunnelGeometry(map, theme.tunnel), tunnel: createTunnelMaterial(theme.surface) };
+      this.shellCache.set(theme.id, entry);
+    }
+    this.tunnel = entry.tunnel;
+    // The wall-fade for Thieves' Eye lives on the old material; make the new one match.
+    this.tunnel.material.transparent = false;
+    this.tunnel.material.depthWrite = true;
+    const shell = new THREE.Mesh(entry.geo, this.tunnel.material);
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    this.scene.add(shell);
+    this.levelObjects.push(shell);
+
+    const doorMat = new THREE.MeshStandardMaterial({ color: theme.doorColor, roughness: 0.9 });
+    // Wider than the doorway so the edges sit inside the rock and leave no gaps.
+    const span = 1 + 2 * theme.tunnel.widen + 0.5;
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const t = map.at(x, y);
-        if (t === Tile.Wall) {
-          // Only draw walls that touch open space.
-          let open = false;
-          for (let d = 0; d < 4; d++) if (map.at(x + DX[d as 0], y + DY[d as 0]) !== Tile.Wall) open = true;
-          if (open) walls.push(box.clone().translate(x, 0.5, y));
-        } else {
-          floors.push(plane.clone().rotateX(-Math.PI / 2).translate(x, 0, y));
-          ceils.push(plane.clone().rotateX(Math.PI / 2).translate(x, 1, y));
-          if (t === Tile.DoorClosed || t === Tile.DoorOpen) {
-            // Walls left/right => passage runs north-south => door spans east-west.
-            const horizontal = map.at(x - 1, y) === Tile.Wall;
-            const geo = new THREE.BoxGeometry(horizontal ? 1 : 0.12, 1, horizontal ? 0.12 : 1).translate(x, 0.5, y);
-            const d = new THREE.Mesh(geo, doorMat);
-            d.castShadow = d.receiveShadow = true;
-            this.scene.add(d);
-            this.doors.set(y * map.width + x, d);
-          }
-        }
+        if (t !== Tile.DoorClosed && t !== Tile.DoorOpen) continue;
+        // Walls left/right => passage runs north-south => door spans east-west.
+        const horizontal = map.at(x - 1, y) === Tile.Wall;
+        const geo = new THREE.BoxGeometry(horizontal ? span : 0.14, 1.3, horizontal ? 0.14 : span).translate(x, 0.5, y);
+        const d = new THREE.Mesh(geo, doorMat);
+        d.userData['door'] = true;
+        d.castShadow = d.receiveShadow = true;
+        this.scene.add(d);
+        this.levelObjects.push(d);
+        this.doors.set(y * map.width + x, d);
       }
     }
-    const addMerged = (geos: THREE.BufferGeometry[], mat: THREE.Material, cast: boolean): void => {
-      if (!geos.length) return;
-      const geo = mergeGeometries(geos, false)!;
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = cast;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-    };
-    addMerged(walls, wallMat, true);
-    addMerged(floors, floorMat, false);
-    addMerged(ceils, ceilMat, false);
   }
 
   /** 0..1 brightness at a floor position from the party's light and any fireballs in flight. */
@@ -255,11 +234,12 @@ export class View {
   private updateSpellVisuals(): void {
     const g = this.game;
     const seeThrough = g.seeThrough > 0;
-    if (this.wallMat.transparent !== seeThrough) {
-      this.wallMat.transparent = seeThrough;
-      this.wallMat.opacity = seeThrough ? 0.3 : 1;
-      this.wallMat.depthWrite = !seeThrough;
-      this.wallMat.needsUpdate = true;
+    const mat = this.tunnel.material;
+    this.tunnel.seeThrough.value = seeThrough ? 1 : 0;
+    if (mat.transparent !== seeThrough) {
+      mat.transparent = seeThrough;
+      mat.depthWrite = !seeThrough;
+      mat.needsUpdate = true;
     }
     const last = g.trail[g.trail.length - 1];
     const key = g.footprints > 0 ? `${g.trail.length}:${last?.x},${last?.y}` : '';
@@ -439,7 +419,7 @@ export class View {
         const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.textureForItem(item), transparent: true, depthWrite: false }));
         sp.scale.set(0.34, 0.34, 1);
         sp.userData['floor'] = { x, y: z, index: i };
-        sp.position.set(x + Math.cos(a) * (list.length > 1 ? 0.18 : 0), 0.17, z + Math.sin(a) * (list.length > 1 ? 0.18 : 0));
+        sp.position.set(x + Math.cos(a) * (list.length > 1 ? 0.18 : 0), 0.24, z + Math.sin(a) * (list.length > 1 ? 0.18 : 0));
         this.scene.add(sp);
         this.floorSprites.push(sp);
       });

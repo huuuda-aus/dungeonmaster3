@@ -136,6 +136,8 @@
               border:1px solid #7a6a90; border-radius:8px; padding:10px 12px; font-size:14px; }
   #settings h5 { margin:0 0 8px; font-size:15px; }
   #settings label { display:flex; gap:8px; align-items:flex-start; cursor:pointer; }
+  #settings label.sel { display:block; margin-top:10px; }
+  #settings select { display:block; width:100%; margin-top:4px; background:#2a2332; color:var(--text); border:1px solid var(--edge); border-radius:4px; padding:5px; font:inherit; }
   #settings p { margin:8px 0 0; color:var(--dim); font-size:12px; }
   #pause { position:absolute; left:0; right:0; top:42%; z-index:9; place-items:center; pointer-events:none;
            font-size:26px; letter-spacing:.1em; color:#e8d9a8; text-shadow:0 2px 8px #000; }
@@ -159,6 +161,7 @@
     <div id="settings" style="display:none">
       <h5>Settings</h5>
       <label><input type="checkbox" id="opt-pause-inv"> Pause while the inventory is open</label>
+      <label class="sel">Dungeon look <select id="opt-theme"></select></label>
       <p>Press P to pause at any time.</p>
     </div>
     <div id="pause" style="display:none">PAUSED</div>

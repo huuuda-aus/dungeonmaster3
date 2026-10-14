@@ -2,10 +2,12 @@
 export interface Settings {
   /** Freeze the game while an inventory screen is open (the original did not). */
   pauseInInventory: boolean;
+  /** Dungeon look: a theme id from render/themes. */
+  theme: string;
 }
 
 const KEY = 'crawler.settings';
-const DEFAULTS: Settings = { pauseInInventory: false };
+const DEFAULTS: Settings = { pauseInInventory: false, theme: 'granite' };
 
 export function loadSettings(): Settings {
   try {

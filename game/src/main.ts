@@ -4,6 +4,7 @@ import { Inventory } from './inventory';
 import { loadSettings, saveSettings } from './settings';
 import { SpellBar } from './spellbar';
 import { level1 } from './levels';
+import { THEMES } from './render/themes';
 import { View } from './render/view';
 import { Game, TICKS_PER_SECOND, type Command } from './sim/game';
 
@@ -24,6 +25,20 @@ pauseBox.addEventListener('change', () => {
   settings.pauseInInventory = pauseBox.checked;
   saveSettings(settings);
 });
+const themeSel = settingsEl.querySelector<HTMLSelectElement>('#opt-theme')!;
+for (const t of THEMES) {
+  const o = document.createElement('option');
+  o.value = t.id;
+  o.textContent = t.name;
+  themeSel.appendChild(o);
+}
+themeSel.value = settings.theme;
+themeSel.addEventListener('change', () => {
+  settings.theme = themeSel.value;
+  saveSettings(settings);
+  // Give the browser a moment to close the dropdown before the level rebuilds.
+  setTimeout(() => view.setTheme(settings.theme), 30);
+});
 gear.addEventListener('click', (e) => {
   e.stopPropagation();
   settingsEl.style.display = settingsEl.style.display === 'none' ? 'block' : 'none';
@@ -43,7 +58,7 @@ function start(): void {
   hudEl.innerHTML = '';
   viewEl.querySelector('canvas')?.remove();
   game = new Game(level1(), (Date.now() & 0xffff) || 1);
-  view = new View(viewEl, game);
+  view = new View(viewEl, game, settings.theme);
   inventory?.destroy();
   inventory = new Inventory(viewEl, () => game);
   hud = new Hud(hudEl, logEl, game, (i) => select(i), (i) => inventory.toggle(i));
